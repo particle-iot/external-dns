@@ -281,7 +281,12 @@ func (sc *serviceSource) generateEndpoints(svc *v1.Service, hostname string, nod
 		}
 	case v1.ServiceTypeNodePort:
 		// add the nodeTargets and extract an SRV endpoint
-		targets = append(targets, nodeTargets...)
+		serviceNodeTargets, err := sc.extractNodePortTargets(svc)
+		if err != nil {
+			log.Debugf("Unable to extract %s service NodePort targets", svc.Name)
+			return endpoints
+		}
+		targets = append(targets, serviceNodeTargets...)
 		endpoints = append(endpoints, sc.extractNodePortEndpoints(svc, nodeTargets, hostname, ttl)...)
 	}
 
@@ -347,6 +352,58 @@ func (sc *serviceSource) extractNodeTargets() (endpoint.Targets, error) {
 				internalIPs = append(internalIPs, address.Address)
 			}
 		}
+	}
+
+	if len(externalIPs) > 0 {
+		return externalIPs, nil
+	}
+
+	return internalIPs, nil
+}
+
+func (sc *serviceSource) extractNodePortTargets(svc *v1.Service) (endpoint.Targets, error) {
+	var (
+		internalIPs endpoint.Targets
+		externalIPs endpoint.Targets
+	)
+
+	endpoint, err := sc.client.CoreV1().Endpoints(svc.Namespace).Get(svc.Name, metav1.GetOptions{})
+	if err != nil {
+		log.Debugf("Unable to get %s service endpoints in %s namespace", svc.Name, svc.Namespace)
+		log.Debug(err)
+		return nil, err
+	}
+
+	for _, subset := range endpoint.Subsets {
+		for _, address := range subset.Addresses {
+			internalIPs = append(internalIPs, address.IP)
+		}
+	}
+	
+	// Get the public IPs of the Nodes
+	nodes, err := sc.client.CoreV1().Nodes().List(metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	
+	for _, node := range nodes.Items {
+		for _, internalAddress := range internalIPs {
+			var nodeFound bool
+			for _, address := range node.Status.Addresses {
+				if address.Type == v1.NodeInternalIP && address.Address == internalAddress {
+					nodeFound = true
+				}
+			}
+			if !nodeFound {
+				log.Debugf("Unable to get node for %s endpoint", internalAddress)
+				continue
+			}
+			for _, address := range node.Status.Addresses {
+				if address.Type == v1.NodeExternalIP  {
+					externalIPs = append(externalIPs, address.Address)
+				}
+			}
+		}	
 	}
 
 	if len(externalIPs) > 0 {

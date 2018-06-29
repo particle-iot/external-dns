@@ -1022,7 +1022,7 @@ func TestClusterIpServices(t *testing.T) {
 	}
 }
 
-// testNodePortServices tests that various services generate the correct endpoints.
+// TestNodePortServices tests that various services generate the correct endpoints.
 func TestNodePortServices(t *testing.T) {
 	for _, tc := range []struct {
 		title            string
@@ -1041,7 +1041,7 @@ func TestNodePortServices(t *testing.T) {
 		nodes            []*v1.Node
 	}{
 		{
-			"annotated NodePort services return an endpoint with IP addresses of the cluster's nodes",
+			"annotated NodePort services return an endpoint with IP addresses of the service endpoint's nodes",
 			"",
 			"",
 			"testing",
@@ -1077,6 +1077,16 @@ func TestNodePortServices(t *testing.T) {
 					Addresses: []v1.NodeAddress{
 						{Type: v1.NodeExternalIP, Address: "54.10.11.2"},
 						{Type: v1.NodeInternalIP, Address: "10.0.1.2"},
+					},
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node3",
+				},
+				Status: v1.NodeStatus{
+					Addresses: []v1.NodeAddress{
+						{Type: v1.NodeExternalIP, Address: "54.10.11.3"},
+						{Type: v1.NodeInternalIP, Address: "10.0.1.3"},
 					},
 				},
 			}},
@@ -1121,7 +1131,7 @@ func TestNodePortServices(t *testing.T) {
 			}},
 		},
 		{
-			"annotated NodePort services return an endpoint with IP addresses of the private cluster's nodes",
+			"annotated NodePort services return an endpoint with IP addresses of the private service endpoint's nodes",
 			"",
 			"",
 			"testing",
@@ -1190,6 +1200,13 @@ func TestNodePortServices(t *testing.T) {
 			}
 
 			_, err := kubernetes.CoreV1().Services(service.Namespace).Create(service)
+			require.NoError(t, err)
+
+			// Create a service endpoints
+			serviceEndpoints := &v1.Endpoints{
+
+			}
+			_, err := kubernetes.CoreV1().Endpoints(service.Namespace).Create(serviceEndpoints)
 			require.NoError(t, err)
 
 			// Create our object under test and get the endpoints.
